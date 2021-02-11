@@ -12,6 +12,7 @@ import (
 	"github.com/openmultiplayer/web/server/src/api/auth"
 	"github.com/openmultiplayer/web/server/src/api/docs"
 	"github.com/openmultiplayer/web/server/src/api/legacy"
+	"github.com/openmultiplayer/web/server/src/api/ppackage"
 	"github.com/openmultiplayer/web/server/src/api/servers"
 	"github.com/openmultiplayer/web/server/src/api/users"
 	"github.com/openmultiplayer/web/server/src/authentication"
@@ -45,6 +46,7 @@ func New(auther *authentication.State) *chi.Mux {
 	router.Mount("/docs", docs.New())
 	router.Mount("/auth", auth.New())
 	router.Mount("/users", users.New())
+	router.Mount("/packages", ppackage.New())
 
 	router.Get("/version", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"version": version.Version}) //nolint:errcheck
