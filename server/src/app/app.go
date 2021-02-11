@@ -9,9 +9,11 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/golobby/container"
+	"github.com/google/go-github/github"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	"golang.org/x/oauth2"
 
 	"github.com/openmultiplayer/web/server/src/api"
 	"github.com/openmultiplayer/web/server/src/authentication"
@@ -20,6 +22,10 @@ import (
 	"github.com/openmultiplayer/web/server/src/mailer"
 	"github.com/openmultiplayer/web/server/src/mailreg"
 	"github.com/openmultiplayer/web/server/src/mailworker"
+	"github.com/openmultiplayer/web/server/src/pkgscraper"
+	"github.com/openmultiplayer/web/server/src/pkgsearcher"
+	"github.com/openmultiplayer/web/server/src/pkgstorage"
+	"github.com/openmultiplayer/web/server/src/pkgworker"
 	"github.com/openmultiplayer/web/server/src/pubsub"
 	"github.com/openmultiplayer/web/server/src/queryer"
 	"github.com/openmultiplayer/web/server/src/scraper"
@@ -40,6 +46,7 @@ type Config struct {
 	DiscordClientID     string `required:"true" split_words:"true"`
 	DiscordClientSecret string `required:"true" split_words:"true"`
 	SendgridAPIKey      string `required:"true" split_words:"true"`
+	GithubToken         string `required:"true" split_words:"true"`
 }
 
 func build() {
@@ -74,6 +81,16 @@ func build() {
 			panic(errors.Wrap(err, "failed to connect to rabbitmq"))
 		}
 		return ps
+	})
+
+	// -
+	// GitHub Client
+	// -
+	container.Singleton(func(config Config) *github.Client {
+		return github.NewClient(oauth2.NewClient(
+			context.Background(),
+			oauth2.StaticTokenSource(&oauth2.Token{AccessToken: config.GithubToken}),
+		))
 	})
 
 	// -
@@ -136,6 +153,34 @@ func build() {
 	container.Singleton(serverworker.New)
 
 	// -
+	// Package Index Storage
+	// -
+	container.Singleton(func() pkgstorage.Storer {
+		s, err := pkgstorage.New("packages.db")
+		if err != nil {
+			panic(errors.Wrap(err, "failed to create package index"))
+		}
+		return s
+	})
+
+	// -
+	// Package Index Searcher
+	// -
+	container.Singleton(pkgsearcher.NewGitHubSearcher)
+
+	// -
+	// Package Index Scraper
+	// -
+	container.Singleton(pkgscraper.NewGitHubScraper)
+
+	// -
+	// Package Index Worker
+	// -
+	container.Singleton(func(searcher pkgsearcher.Searcher, scraper pkgscraper.Scraper, storer pkgstorage.Storer) *pkgworker.PackageWorker {
+		return pkgworker.NewPackageWorker(searcher, scraper, storer, time.Hour*6, time.Hour*6)
+	})
+
+	// -
 	// OAuth2 Services
 	// -
 	container.Singleton(func(config Config, db *db.PrismaClient, mw *mailworker.Worker) *authentication.GitHubProvider {
@@ -183,7 +228,7 @@ func Start(ctx context.Context) {
 		var w *serverworker.Worker
 		container.Make(&w)
 		if err := w.RunWithSeed(ctx, time.Second*30, seed.Addresses); err != nil {
-			zap.L().Error("index worker stopped unexpectedly", zap.Error(err))
+			zap.L().Error("server index worker stopped unexpectedly", zap.Error(err))
 		}
 	}()
 
@@ -192,6 +237,14 @@ func Start(ctx context.Context) {
 		container.Make(&mw)
 		if err := mw.Run(); err != nil {
 			zap.L().Fatal("mailworker stopped unexpectedly", zap.Error(err))
+		}
+	}()
+
+	go func() {
+		var w *pkgworker.PackageWorker
+		container.Make(&w)
+		if err := w.Run(ctx); err != nil {
+			zap.L().Fatal("package index worker stopped unexpectedly", zap.Error(err))
 		}
 	}()
 
