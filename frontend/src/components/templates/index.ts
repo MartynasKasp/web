@@ -14,6 +14,10 @@ import VersionWarnES from "./es/version-warning";
 import LowercaseNoteES from "./es/lowercase-note";
 import TipNPCCallbacksES from "./es/npc-callbacks-tip";
 
+import VersionWarnLT from "./lt/version-warning";
+import LowercaseNoteLT from "./lt/lowercase-note";
+import TipNPCCallbacksLT from "./lt/npc-callbacks-tip";
+
 export default {
   VersionWarn,
   LowercaseNote,
@@ -27,4 +31,7 @@ export default {
   VersionWarnES,
   LowercaseNoteES,
   TipNPCCallbacksES,
+  VersionWarnLT,
+  LowercaseNoteLT,
+  TipNPCCallbacksLT,
 };
